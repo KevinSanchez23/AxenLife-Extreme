@@ -4,6 +4,10 @@ Landing del evento **Axen Life Extreme** migrada a **Vite + React** (JavaScript)
 conservando el mismo diseño, animaciones (GSAP + ScrollTrigger + Lenis) y la
 demostración de abono. Sin cobros reales.
 
+El backend de Stripe y Google Sheets está en `server/`. Configuración, contrato de API,
+pruebas y despliegue en Azure: [server/README.md](server/README.md).
+El formulario visual aún es una demo; falta conectarlo a la API para habilitar pagos.
+
 ## Requisitos
 - Node.js 18+ (recomendado 20/22)
 
