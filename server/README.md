@@ -1,8 +1,8 @@
 # Backend de abonos: Azure + Stripe + Google Sheets
 
 Node.js 22 o superior, TypeScript y Express. Sin base de datos propia.
-La landing sigue siendo una demo: este cambio prepara la API; conectar el botón y
-las pantallas de retorno es un paso separado. No activar cobros públicos hasta probar el recorrido completo.
+La landing está conectada a la API y descarga el comprobante PDF al confirmar el pago.
+No activar cobros públicos hasta configurar las cuentas y probar el recorrido completo.
 
 ## Configuración local
 
@@ -13,7 +13,8 @@ las pantallas de retorno es un paso separado. No activar cobros públicos hasta 
 
 Vite reenvía `/api` a `127.0.0.1:3001`. En producción debe hacerlo el proxy HTTPS.
 `PUBLIC_SITE_URL` es la URL completa de la landing (admite subcarpetas, usar `/` final).
-El retorno usa `?pago=recibido` o `?pago=cancelado`; esos parámetros NO acreditan un pago.
+El retorno usa `?pago=recibido&session_id={CHECKOUT_SESSION_ID}` o `?pago=cancelado`;
+esos parámetros NO acreditan un pago. El backend consulta la sesión y el cargo en Stripe.
 No se expone una consulta pública de abonos por correo.
 
 ## Google Sheets y Apps Script
@@ -52,7 +53,8 @@ La hoja y Stripe almacenan datos personales; el backend no los persiste ni los r
   "name": "Ana Pérez",
   "email": "ana@example.com",
   "phone": "+52 5555555555",
-  "amount": "1500.00"
+  "amount": "1500.00",
+  "accessToken": "<64 caracteres hexadecimales aleatorios>"
 }
 ```
 
@@ -67,6 +69,34 @@ los datos o se inicia otro abono. Deshabilitar el botón durante el envío.
 El SDK envía la clave de idempotencia a Stripe; no requiere almacenamiento local.
 El correo original normalizado se conserva en metadata, aunque se cambie el correo de
 facturación en Checkout. La hoja usa el original como vínculo del abono.
+
+### Retorno y comprobante PDF
+
+El cliente crea una clave de 32 bytes aleatorios y la guarda, junto al UUID del intento,
+en `sessionStorage`. No guarda nombre, correo ni teléfono. El backend almacena únicamente
+el hash de la clave en metadata de la sesión Stripe. Reintentos conservan clave y UUID;
+editar el abono genera un intento nuevo.
+
+`POST /api/pago` y `POST /api/comprobante` reciben:
+
+```json
+{ "sessionId": "cs_test_...", "accessToken": "<clave guardada en la pestaña>" }
+```
+
+Ambos verifican la clave y consultan Stripe. La primera ruta devuelve `status` y,
+solo cuando está pagado, `receipt` con los datos originales. La segunda devuelve
+`application/pdf` únicamente para pagos confirmados sin devolución ni disputa.
+No aceptan importes o datos personales aportados por el navegador para generar el PDF.
+El documento identifica los pagos de prueba y aclara que no es factura fiscal.
+La fecha procede del cargo de Stripe, con zona horaria de Ciudad de México.
+
+La clave no se envía en URLs. La landing y la API desactivan el Referer; las respuestas
+de la API no se cachean. El identificador de sesión aparece en el retorno de Stripe,
+pero no basta para acceder al comprobante. No registrar cuerpos de estas rutas en el proxy.
+Volver desde Stripe a **la misma pestaña y al mismo origen exacto** (incluye www/puerto).
+Al cerrar la pestaña o limpiar su almacenamiento se pierde este acceso; el equipo puede
+recuperar el pago en Stripe. No se habilita recuperación por correo sin verificación.
+El PDF confirma el cobro de Stripe; no implica que Google Sheets ya haya terminado de sincronizar.
 
 ## Stripe y prueba de extremo a extremo
 
@@ -111,6 +141,8 @@ No requiere Vercel ni servicios adicionales de Azure. En Linux o Windows:
 2. Configurar `.env` privado (permisos solo del usuario del servicio), `NODE_ENV=production`,
    URL HTTPS real, claves correctas y el secreto de firma del endpoint de producción.
 3. Ejecutar `npm run backend:start` con su gestor de servicios (systemd, servicio Windows, etc.).
+   Incluir `src/assets/fonts/Grift-500.woff2` y `Grift-700.woff2` junto al proyecto:
+   el generador PDF incorpora estas fuentes desde disco para conservar la identidad visual.
 4. Publicar `/api/` mediante su proxy Nginx/IIS hacia `http://127.0.0.1:3001`,
    conservando la ruta, el cuerpo original y el encabezado `Stripe-Signature`.
    Dar al proxy al menos 30 segundos para la respuesta. No exponer el puerto de Node.

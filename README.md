@@ -2,11 +2,13 @@
 
 Landing del evento **Axen Life Extreme** migrada a **Vite + React** (JavaScript),
 conservando el mismo diseño, animaciones (GSAP + ScrollTrigger + Lenis) y la
-demostración de abono. Sin cobros reales.
+flujo de abono conectado a Stripe mediante el backend.
 
 El backend de Stripe y Google Sheets está en `server/`. Configuración, contrato de API,
 pruebas y despliegue en Azure: [server/README.md](server/README.md).
-El formulario visual aún es una demo; falta conectarlo a la API para habilitar pagos.
+El formulario valida el mínimo de $1,500 MXN, abre Stripe y verifica el pago al volver.
+El comprobante se descarga en PDF desde el backend. Configurar las cuentas y probar
+en modo de prueba antes de habilitar cobros reales.
 
 ## Requisitos
 - Node.js 18+ (recomendado 20/22)
@@ -50,5 +52,5 @@ src/
 
 ## Notas
 - Respeta `prefers-reduced-motion` y el botón "Pausar animaciones".
-- La demo de pago es 100% del lado del cliente: no envía ni guarda datos, no cobra.
+- Los pagos requieren el backend, Stripe y el Apps Script de Google Sheets configurados.
 - Fuentes desde Google Fonts (única dependencia externa en runtime).

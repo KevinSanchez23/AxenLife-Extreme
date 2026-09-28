@@ -2,6 +2,8 @@ import express from 'express';
 import type Stripe from 'stripe';
 import type { Config } from './config.js';
 import { InputError, parsePayment, paymentRecord, PAYMENT_SOURCE, type PaymentRecord } from './payments.js';
+import { lookupPayment, tokenHash, validateAccessToken } from './receipt.js';
+import { createReceiptPdf } from './pdf.js';
 
 interface Dependencies {
   stripe: Stripe;
@@ -13,7 +15,7 @@ export function createApp(config: Config, { stripe, writePayment }: Dependencies
   app.disable('x-powered-by');
   app.set('trust proxy', config.trustProxyHops);
   app.use((_req, res, next) => {
-    res.set({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+    res.set({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' });
     next();
   });
   app.get('/api/health', (_req, res) => { res.json({ ok: true }); });
@@ -44,27 +46,29 @@ export function createApp(config: Config, { stripe, writePayment }: Dependencies
   });
 
   const limits = new Map<string, { count: number; until: number }>();
-  app.post('/api/crear-pago', (req, res, next) => {
+  app.use(['/api/crear-pago', '/api/pago', '/api/comprobante'], (req, res, next) => {
     if (req.get('origin') && req.get('origin') !== config.origin) {
       res.status(403).json({ error: 'Origen no permitido.' }); return;
     }
     const now = Date.now();
     for (const [key, value] of limits) if (value.until <= now) limits.delete(key);
-    const ip = req.ip || 'unknown';
+    const ip = `${req.baseUrl}:${req.ip || 'unknown'}`;
     if (!limits.has(ip) && limits.size >= 10000) {
       res.status(429).json({ error: 'Intenta nuevamente más tarde.' }); return;
     }
     const limit = limits.get(ip) || { count: 0, until: now + 60000 };
     limits.set(ip, limit);
-    if (++limit.count > 10) {
+    if (++limit.count > (req.baseUrl === '/api/crear-pago' ? 10 : 30)) {
       res.set('Retry-After', String(Math.ceil((limit.until - now) / 1000)));
       res.status(429).json({ error: 'Demasiados intentos. Espera un minuto.' }); return;
     }
     next();
-  }, express.json({ limit: '8kb' }), async (req, res) => {
+  });
+  app.post('/api/crear-pago', express.json({ limit: '8kb' }), async (req, res) => {
     try {
       if (!req.is('application/json')) { res.status(415).json({ error: 'Usa application/json.' }); return; }
       const input = parsePayment(req.body, config.maxAmountCents);
+      const receiptToken = validateAccessToken(req.body.accessToken);
       const requestId = req.get('Idempotency-Key');
       if (!requestId || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) {
         throw new InputError('Envía un UUID v4 en Idempotency-Key.');
@@ -73,7 +77,7 @@ export function createApp(config: Config, { stripe, writePayment }: Dependencies
       const session = await stripe.checkout.sessions.create({
         mode: 'payment', payment_method_types: ['card'], locale: 'es',
         customer_email: input.email, client_reference_id: requestId,
-        metadata, payment_intent_data: { metadata },
+        metadata: { ...metadata, receipt_token_hash: tokenHash(receiptToken) }, payment_intent_data: { metadata },
         line_items: [{ quantity: 1, price_data: {
           currency: 'mxn', unit_amount: input.cents,
           product_data: { name: 'Abono — Axen Life Extreme' },
@@ -89,6 +93,22 @@ export function createApp(config: Config, { stripe, writePayment }: Dependencies
       }
       console.error('checkout_creation_failed');
       res.status(502).json({ error: 'No se pudo iniciar el pago. Reintenta con el mismo identificador.' });
+    }
+  });
+  app.post(['/api/pago', '/api/comprobante'], express.json({ limit: '2kb' }), async (req, res) => {
+    try {
+      const result = await lookupPayment(stripe, req.body);
+      if (result.status === 'unavailable') { res.status(404).json({ error: 'No se encontró un pago accesible.' }); return; }
+      if (req.path === '/api/pago') { res.json(result); return; }
+      if (result.status !== 'paid') { res.status(409).json({ error: 'El comprobante solo está disponible para un abono confirmado, sin devoluciones ni disputas.' }); return; }
+      const pdf = await createReceiptPdf(result.receipt);
+      res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="abono-${result.receipt.reference}.pdf"` });
+      res.send(pdf);
+    } catch (error) {
+      if (error instanceof InputError) { res.status(400).json({ error: error.message }); return; }
+      if ((error as { code?: string }).code === 'resource_missing') { res.status(404).json({ error: 'No se encontró un pago accesible.' }); return; }
+      console.error('payment_lookup_failed');
+      res.status(502).json({ error: 'No pudimos verificar el pago. Reintenta en un momento; no necesitas pagar otra vez.' });
     }
   });
   app.use((_req, res) => { res.status(404).json({ error: 'Ruta no encontrada.' }); });

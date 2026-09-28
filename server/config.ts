@@ -42,7 +42,7 @@ export function loadConfig(env = process.env): Config {
   if (!/^sk_(test|live)_/.test(stripeSecretKey) || !stripeWebhookSecret.startsWith('whsec_')) throw new Error('Claves de Stripe inválidas');
   return {
     port: integer('PORT', 3001, 1, 65535), origin: origin.origin,
-    successUrl: success.href, cancelUrl: cancel.href,
+    successUrl: `${success.href}&session_id={CHECKOUT_SESSION_ID}`, cancelUrl: cancel.href,
     stripeSecretKey, stripeWebhookSecret, sheetsUrl: sheets.href, sheetsSecret,
     maxAmountCents: integer('MAX_AMOUNT_CENTS', 99999999, 150000, 99999999),
     trustProxyHops: integer('TRUST_PROXY_HOPS', 0, 0, 5),

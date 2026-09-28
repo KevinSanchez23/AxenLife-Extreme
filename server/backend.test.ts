@@ -1,22 +1,23 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac, randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import vm from 'node:vm';
 import Stripe from 'stripe';
 import { createApp } from './app.js';
 import { loadConfig } from './config.js';
 import { parsePayment, paymentRecord, PAYMENT_SOURCE } from './payments.js';
 import { createSheetsWriter } from './sheets.js';
+import { tokenHash } from './receipt.js';
 
 const config = loadConfig({
   PUBLIC_SITE_URL: 'http://localhost:5173/', STRIPE_SECRET_KEY: 'sk_test_example',
   STRIPE_WEBHOOK_SECRET: 'whsec_example', GOOGLE_SHEETS_WEB_APP_URL: 'https://script.google.com/macros/s/example/exec',
   GOOGLE_SHEETS_SHARED_SECRET: 'a'.repeat(64),
 });
-const input = { name: 'Ana Pérez', email: ' ANA@example.com ', phone: '+52 5555555555', amount: '1500.01' };
+const input = { name: 'Ana Pérez', email: ' ANA@example.com ', phone: '+52 5555555555', amount: '1500.01', accessToken: 'a'.repeat(64) };
 const session = {
-  id: 'cs_test_example', mode: 'payment', payment_status: 'paid', currency: 'mxn', amount_total: 150001,
+  id: 'cs_test_example123', mode: 'payment', payment_status: 'paid', currency: 'mxn', amount_total: 150001,
   payment_intent: 'pi_example', livemode: false,
   metadata: { source: PAYMENT_SOURCE, name: input.name, email: 'ana@example.com', phone: input.phone },
 } as unknown as Stripe.Checkout.Session;
@@ -74,6 +75,8 @@ test('API: Checkout, idempotencia, firma real Stripe, errores y reintentos', asy
     assert.equal(creation.params.line_items![0].price_data!.unit_amount, 150001);
     assert.equal(creation.params.line_items![0].price_data!.currency, 'mxn');
     assert.equal(creation.options.idempotencyKey, `abono:${key}`);
+    assert.equal(creation.params.metadata?.receipt_token_hash, tokenHash(input.accessToken));
+    assert.ok(creation.params.success_url?.includes('session_id={CHECKOUT_SESSION_ID}'));
     assert.equal((await post({ ...input, amount: '1499' })).status, 400);
     assert.equal((await post(input, { Origin: 'https://evil.example' })).status, 403);
     assert.equal((await post(input, { 'Idempotency-Key': 'invalid' })).status, 400);
@@ -95,6 +98,50 @@ test('API: Checkout, idempotencia, firma real Stripe, errores y reintentos', asy
   } finally {
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  }
+});
+
+test('retorno y PDF: acceso privado, Stripe confirmado, pendiente, devolución y datos originales', async () => {
+  const stripe = new Stripe(config.stripeSecretKey);
+  let current = {
+    ...session, status: 'complete',
+    metadata: { ...session.metadata, receipt_token_hash: tokenHash(input.accessToken) },
+    payment_intent: { id: 'pi_example123', status: 'succeeded', latest_charge: { created: 1790611200, paid: true, amount_refunded: 0, disputed: false } },
+  };
+  stripe.checkout.sessions.retrieve = (async () => current) as unknown as typeof stripe.checkout.sessions.retrieve;
+  const server = createApp(config, { stripe, writePayment: async () => assert.fail('Consultar no escribe en Sheets') }).listen(0, '127.0.0.1');
+  await new Promise<void>(resolve => server.once('listening', resolve));
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const request = (path: string, accessToken = input.accessToken) => fetch(`${base}${path}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: session.id, accessToken }),
+  });
+  try {
+    assert.equal((await request('/api/pago', 'b'.repeat(64))).status, 404);
+    assert.equal((await request('/api/comprobante', 'b'.repeat(64))).status, 404);
+    const response = await request('/api/pago');
+    const result = await response.json();
+    assert.equal(result.status, 'paid');
+    assert.equal(result.receipt.email, 'ana@example.com');
+    assert.equal(result.receipt.cents, 150001);
+    const pdf = await request('/api/comprobante');
+    assert.equal(pdf.status, 200);
+    assert.equal(pdf.headers.get('content-type'), 'application/pdf');
+    assert.match(pdf.headers.get('content-disposition')!, /abono-pi_example123.pdf/);
+    const buffer = Buffer.from(await pdf.arrayBuffer());
+    assert.equal(buffer.subarray(0, 5).toString(), '%PDF-');
+    mkdirSync('tmp/pdfs', { recursive: true });
+    writeFileSync('tmp/pdfs/comprobante-prueba.pdf', buffer);
+    current = { ...current, payment_status: 'unpaid' };
+    assert.equal((await (await request('/api/pago')).json()).status, 'pending');
+    assert.equal((await request('/api/comprobante')).status, 409);
+    current = { ...current, payment_status: 'paid', payment_intent: { ...current.payment_intent, latest_charge: { ...current.payment_intent.latest_charge, amount_refunded: 100 } } };
+    assert.equal((await (await request('/api/pago')).json()).status, 'refunded');
+    assert.equal((await request('/api/comprobante')).status, 409);
+    current = { ...current, metadata: { ...current.metadata, source: 'another-site' } };
+    assert.equal((await request('/api/pago')).status, 404);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
   }
 });
 

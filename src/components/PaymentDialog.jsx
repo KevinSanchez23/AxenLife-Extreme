@@ -1,175 +1,210 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { newAttempt, parseAmount, paymentRequest, readAttempt, saveAttempt } from '../lib/payments';
 
-const CURRENCY = 'MXN';
-
-function parseAmount(value) {
-  const raw = String(value).trim();
-  if (!/^\d+(?:\.\d{1,2})?$/.test(raw)) throw new Error('Escribe un monto válido, mayor a cero y con hasta dos decimales.');
-  const cents = Math.round(Number(raw) * 100);
-  if (!Number.isSafeInteger(cents) || cents <= 0 || cents > 99999999999) throw new Error('Revisa el importe de tu abono.');
-  return cents;
-}
 function money(cents) {
-  return new Intl.NumberFormat('es-MX', { style: 'currency', currency: CURRENCY, minimumFractionDigits: 2 }).format(cents / 100);
+  return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(cents / 100);
 }
 
-function OrderSummary({ data, withOrder }) {
-  const rows = [];
-  if (withOrder) rows.push(['Folio de ejemplo', data.reference]);
-  rows.push(['Concepto', 'Axen Life Extreme'], ['Nombre', data.name], ['Correo', data.email]);
+function OrderSummary({ data }) {
+  const rows = [['Concepto', 'Axen Life Extreme'], ['Nombre', data.name], ['Correo', data.email]];
   if (data.phone) rows.push(['WhatsApp', data.phone]);
-  rows.push(['Abono de ejemplo', `${money(data.cents)} MXN`]);
-  return (
-    <div className="order-summary">
-      <dl style={{ margin: 0 }}>
-        {rows.map(([label, value]) => (
-          <div className={`order-row${label === 'Abono de ejemplo' ? ' amount' : ''}`} key={label}>
-            <dt>{label}</dt><dd>{value}</dd>
-          </div>
-        ))}
-      </dl>
-    </div>
-  );
+  if (data.reference) rows.push(['Referencia', data.reference]);
+  if (data.paidAt) rows.push(['Fecha del pago', new Intl.DateTimeFormat('es-MX', {
+    dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Mexico_City',
+  }).format(new Date(data.paidAt)) + ' (CDMX)']);
+  rows.push(['Abono', `${money(data.cents)} MXN`]);
+  return <div className="order-summary"><dl style={{ margin: 0 }}>
+    {rows.map(([label, value]) => <div className={`order-row${label === 'Abono' ? ' amount' : ''}`} key={label}>
+      <dt>{label}</dt><dd>{value}</dd>
+    </div>)}
+  </dl></div>;
 }
 
-export default function PaymentDialog({ open, onClose }) {
+export default function PaymentDialog({ open, onClose, paymentReturn }) {
   const ref = useRef(null);
   const formRef = useRef(null);
+  const attemptRef = useRef(null);
+  const inFlight = useRef(false);
   const [step, setStep] = useState('form');
   const [error, setError] = useState('');
   const [draft, setDraft] = useState(null);
   const [order, setOrder] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [checkVersion, setCheckVersion] = useState(0);
 
-  // abrir / cerrar el <dialog> nativo y clase para el cursor
+  useEffect(() => {
+    const restored = () => { inFlight.current = false; setBusy(false); };
+    window.addEventListener('pageshow', restored);
+    return () => window.removeEventListener('pageshow', restored);
+  }, []);
+
   useEffect(() => {
     const dlg = ref.current;
-    if (!dlg) return;
     if (open) {
       if (!dlg.open) dlg.showModal();
       document.documentElement.classList.add('dialog-open');
-      setStep('form'); setError(''); setDraft(null); setOrder(null);
-      formRef.current && formRef.current.reset();
-    } else if (dlg.open) {
-      dlg.close();
-    }
-  }, [open]);
+      setError(''); setOrder(null);
+      setStep(paymentReturn?.type === 'success' ? 'checking' : 'form');
+      if (!paymentReturn) { setDraft(null); attemptRef.current = null; }
+    } else if (dlg.open) dlg.close();
+  }, [open, paymentReturn]);
 
-  // cierre nativo (Escape / backdrop)
+  useEffect(() => {
+    if (!open || paymentReturn?.type !== 'success') return;
+    const controller = new AbortController();
+    let active = true;
+    setStep('checking'); setError('');
+    const attempt = readAttempt();
+    if (!attempt?.accessToken || !paymentReturn.sessionId) {
+      setError('No encontramos el acceso a este comprobante. Vuelve desde Stripe en la misma pestaña donde iniciaste el pago. Si ya pagaste, contacta al equipo; no necesitas abonar otra vez.');
+      setStep('verification-error');
+      return () => controller.abort();
+    }
+    const timeout = setTimeout(() => controller.abort(), 25000);
+    paymentRequest('/api/pago', { sessionId: paymentReturn.sessionId, accessToken: attempt.accessToken }, { signal: controller.signal })
+      .then(response => response.json())
+      .then(result => {
+        if (!active) return;
+        if (result.status === 'paid') { setOrder(result.receipt); setStep('result'); }
+        else if (result.status === 'pending') setStep('pending');
+        else if (result.status === 'expired') setStep('expired');
+        else if (result.status === 'refunded') setStep('adjusted');
+        else throw new Error('No se pudo verificar este abono.');
+      })
+      .catch(err => {
+        if (!active) return;
+        setError(err.name === 'AbortError' ? 'La consulta tardó demasiado. Verifica nuevamente; no necesitas pagar otra vez.' : err.message);
+        setStep('verification-error');
+      }).finally(() => clearTimeout(timeout));
+    return () => { active = false; clearTimeout(timeout); controller.abort(); };
+  }, [open, paymentReturn, checkVersion]);
+
   useEffect(() => {
     const dlg = ref.current;
-    if (!dlg) return;
-    const onCloseNative = () => {
+    const closed = () => {
       if (!document.querySelector('dialog[open]')) document.documentElement.classList.remove('dialog-open');
       onClose();
     };
-    dlg.addEventListener('close', onCloseNative);
-    return () => dlg.removeEventListener('close', onCloseNative);
+    const cancel = e => { if (inFlight.current) e.preventDefault(); };
+    dlg.addEventListener('close', closed); dlg.addEventListener('cancel', cancel);
+    return () => { dlg.removeEventListener('close', closed); dlg.removeEventListener('cancel', cancel); };
   }, [onClose]);
 
-  const backdrop = (e) => { if (e.target === ref.current) ref.current.close(); };
+  useEffect(() => { if (open) ref.current?.querySelector('h2')?.focus(); }, [step, open]);
 
-  const submit = (e) => {
-    e.preventDefault();
-    setError('');
-    const form = formRef.current;
-    if (!form.reportValidity()) return;
+  function submit(e) {
+    e.preventDefault(); setError('');
+    if (!formRef.current.reportValidity()) return;
     try {
-      const data = new FormData(form);
+      const data = new FormData(formRef.current);
       const name = String(data.get('name') || '').trim();
-      const email = String(data.get('email') || '').trim();
-      if (name.length < 2) throw new Error('Escribe tu nombre para identificar el abono.');
-      setDraft({ name, email, phone: String(data.get('phone') || '').trim(), cents: parseAmount(data.get('amount')) });
+      const email = String(data.get('email') || '').trim().toLowerCase();
+      if (name.length < 2) throw new Error('Escribe tu nombre completo.');
+      if (email !== String(data.get('confirmEmail') || '').trim().toLowerCase()) throw new Error('Los correos no coinciden. Revísalos para vincular correctamente tu abono.');
+      const cents = parseAmount(data.get('amount'));
+      setDraft({ name, email, phone: String(data.get('phone') || '').trim(), cents });
       setStep('review');
     } catch (err) { setError(err.message); }
-  };
+  }
 
-  const generate = () => {
-    if (!draft) return;
-    let o = order;
-    if (!o) {
-      const bytes = new Uint8Array(5); crypto.getRandomValues(bytes);
-      const token = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('').toUpperCase();
-      o = { ...draft, reference: `DEMO-EXT-${token}`, createdAt: new Date().toISOString() };
-      setOrder(o);
+  async function pay() {
+    if (!draft || inFlight.current) return;
+    inFlight.current = true; setBusy(true); setError('');
+    try {
+      const body = { name: draft.name, email: draft.email, phone: draft.phone, amount: (draft.cents / 100).toFixed(2) };
+      const fingerprint = JSON.stringify(body);
+      if (attemptRef.current?.fingerprint !== fingerprint) attemptRef.current = { ...newAttempt(), fingerprint };
+      const { requestId, accessToken } = attemptRef.current;
+      saveAttempt({ requestId, accessToken });
+      const response = await paymentRequest('/api/crear-pago', { ...body, accessToken }, {
+        requestId, signal: AbortSignal.timeout(25000),
+      });
+      const result = await response.json();
+      const url = new URL(result.url);
+      if (url.protocol !== 'https:' || url.hostname !== 'checkout.stripe.com') throw new Error('La dirección de pago no es válida.');
+      window.location.assign(url.href);
+    } catch (err) {
+      setError(err.name === 'TimeoutError' ? 'La solicitud tardó demasiado. Puedes reintentar con el mismo abono.' : err.message);
+      inFlight.current = false; setBusy(false);
     }
-    setStep('result');
-  };
+  }
 
-  const download = () => {
-    if (!order) return;
-    const text = [
-      'AXEN LIFE EXTREME — ORDEN DE EJEMPLO',
-      'DEMOSTRACIÓN · SIN VALIDEZ DE COBRO', '',
-      `Folio: ${order.reference}`, `Fecha de generación: ${new Date(order.createdAt).toLocaleString('es-MX')}`,
-      'Evento: Axen Life Extreme · Whistler, Canadá', `Nombre: ${order.name}`,
-      `Correo: ${order.email}`, ...(order.phone ? [`WhatsApp: ${order.phone}`] : []),
-      `Abono de ejemplo: ${money(order.cents)} MXN`, 'Estado: Pendiente de pago · Demostración', '',
-      'La moneda y las condiciones del abono están por confirmar.',
-      'Esta orden es ilustrativa. No se realizó ningún cargo, no acredita un abono y no reserva un lugar.',
-      'No se envió ni guardó información en un servidor. El archivo descargado queda bajo tu control.',
-    ].join('\n');
-    const url = URL.createObjectURL(new Blob(['﻿', text], { type: 'text/plain;charset=utf-8' }));
-    const link = document.createElement('a'); link.href = url; link.download = `${order.reference}.txt`;
-    document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1500);
-  };
+  async function download() {
+    if (!order || inFlight.current) return;
+    inFlight.current = true; setBusy(true); setError('');
+    try {
+      const response = await paymentRequest('/api/comprobante', {
+        sessionId: paymentReturn.sessionId, accessToken: readAttempt()?.accessToken,
+      }, { signal: AbortSignal.timeout(25000) });
+      if (!response.headers.get('content-type')?.includes('application/pdf')) throw new Error('No se pudo generar el comprobante.');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url; link.download = `abono-${order.reference}.pdf`;
+      document.body.append(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (err) { setError(err.name === 'TimeoutError' ? 'La descarga tardó demasiado. Intenta nuevamente.' : err.message); }
+    finally { inFlight.current = false; setBusy(false); }
+  }
 
-  const labelledby = step === 'form' ? 'payment-title' : step === 'review' ? 'review-heading' : 'result-heading';
+  const close = () => { if (!inFlight.current) ref.current.close(); };
+  const retry = () => setCheckVersion(v => v + 1);
+  return <dialog id="payment-dialog" className="modal" ref={ref} onClick={e => { if (e.target === ref.current) close(); }} aria-labelledby="payment-title" aria-busy={busy || step === 'checking'}>
+    <button type="button" className="modal-close" onClick={close} disabled={busy} aria-label="Cerrar formulario">×</button>
+    <div className="modal-brand">AXEN LIFE <span>EXTREME</span></div>
 
-  return (
-    <dialog id="payment-dialog" className="modal" ref={ref} onClick={backdrop} aria-labelledby={labelledby} aria-describedby={step === 'form' ? 'payment-intro' : undefined}>
-      <button type="button" className="modal-close" onClick={() => ref.current.close()} aria-label="Cerrar formulario">×</button>
-      <div className="modal-brand">AXEN LIFE <span>EXTREME</span></div>
-      <div className="demo-label">VISTA PREVIA · SIN COBRO REAL</div>
-
-      {step === 'form' && (
-        <div className="payment-step">
-          <p className="step-count">01 / TU ABONO</p>
-          <h2 id="payment-title" tabIndex={-1}>Tu próxima cima<br />empieza aquí.</h2>
-          <p className="modal-intro" id="payment-intro">Elige la cantidad que deseas abonar y revisa tu orden de ejemplo.</p>
-          <form id="payment-form" ref={formRef} onSubmit={submit}>
-            <div className="field"><label htmlFor="full-name">Nombre completo</label><input id="full-name" name="name" autoComplete="name" placeholder="Tu nombre y apellido" required maxLength={100} /></div>
-            <div className="field-row">
-              <div className="field"><label htmlFor="email">Correo electrónico</label><input type="email" id="email" name="email" autoComplete="email" placeholder="tu@correo.com" required maxLength={150} /></div>
-              <div className="field"><label htmlFor="phone">WhatsApp <span>(opcional)</span></label><input type="tel" id="phone" name="phone" autoComplete="tel" placeholder="Tu número de contacto" maxLength={25} /></div>
-            </div>
-            <div className="field amount-field">
-              <label htmlFor="amount">¿Cuánto quieres abonar?</label>
-              <div className="amount-input"><input id="amount" name="amount" type="number" inputMode="decimal" min="0.01" max="999999999.99" step="0.01" placeholder="0.00" required aria-describedby="amount-help" /><span>MXN · EJEMPLO</span></div>
-              <p id="amount-help">La moneda y las condiciones del abono están por confirmar.</p>
-            </div>
-            {error && <p className="form-error" role="alert">{error}</p>}
-            <button type="submit" className="button button-dark full-button">Revisar mi abono <span aria-hidden="true">↗</span></button>
-            <p className="form-note">Usa datos de prueba. Esta demostración no envía ni guarda tus datos.</p>
-          </form>
+    {step === 'form' && <div className="payment-step">
+      <p className="step-count">01 / TU ABONO</p>
+      <h2 id="payment-title" tabIndex={-1}>Tu próxima cima<br />empieza aquí.</h2>
+      <p className="modal-intro">Elige cuánto deseas abonar. El mínimo es de $1,500.00 MXN.</p>
+      {paymentReturn?.type === 'cancelled' && <p className="payment-notice" role="status">Saliste del proceso de pago. Puedes revisar tus datos e intentarlo nuevamente.</p>}
+      <form id="payment-form" ref={formRef} onSubmit={submit}>
+        <div className="field"><label htmlFor="full-name">Nombre completo</label><input id="full-name" name="name" autoComplete="name" placeholder="Tu nombre y apellido" defaultValue={draft?.name || ''} required minLength={2} maxLength={100} /></div>
+        <div className="field"><label htmlFor="email">Correo electrónico</label><input type="email" id="email" name="email" autoComplete="email" placeholder="tu@correo.com" defaultValue={draft?.email || ''} required maxLength={150} /></div>
+        <div className="field"><label htmlFor="confirm-email">Confirma tu correo</label><input type="email" id="confirm-email" name="confirmEmail" autoComplete="off" placeholder="Escribe nuevamente tu correo" defaultValue={draft?.email || ''} required maxLength={150} /></div>
+        <div className="field"><label htmlFor="phone">WhatsApp <span>(opcional)</span></label><input type="tel" id="phone" name="phone" autoComplete="tel" placeholder="Tu número de contacto" defaultValue={draft?.phone || ''} maxLength={25} /></div>
+        <div className="field amount-field">
+          <label htmlFor="amount">¿Cuánto quieres abonar?</label>
+          <div className="amount-input"><input id="amount" name="amount" type="number" inputMode="decimal" min="1500" max="999999.99" step="0.01" placeholder="1500.00" defaultValue={draft ? (draft.cents / 100).toFixed(2) : ''} required aria-describedby="amount-help" /><span>MXN</span></div>
+          <p id="amount-help">Importe en pesos mexicanos. Abono mínimo: $1,500.00.</p>
         </div>
-      )}
+        {error && <p className="form-error" role="alert">{error}</p>}
+        <button type="submit" className="button button-dark full-button">Revisar mi abono <span aria-hidden="true">↗</span></button>
+        <p className="form-note">Vincularemos tu abono al correo indicado. El pago se completa en Stripe.</p>
+      </form>
+    </div>}
 
-      {step === 'review' && draft && (
-        <div className="payment-step">
-          <p className="step-count">02 / REVISA TU ORDEN</p>
-          <h2 id="review-heading" tabIndex={-1}>Un paso más<br />hacia lo extraordinario.</h2>
-          <p className="modal-intro">Confirma los datos de tu abono de ejemplo.</p>
-          <OrderSummary data={draft} />
-          <div className="review-actions">
-            <button className="button button-dark full-button" onClick={generate}>Generar orden de ejemplo <span aria-hidden="true">↗</span></button>
-            <button className="back-button" onClick={() => setStep('form')}>← Editar datos</button>
-          </div>
-          <p className="form-note">Generar esta orden no realiza un cargo ni confirma tu lugar.</p>
-        </div>
-      )}
+    {step === 'review' && draft && <div className="payment-step">
+      <p className="step-count">02 / REVISA TU ABONO</p>
+      <h2 id="payment-title" tabIndex={-1}>Un paso más<br />hacia lo extraordinario.</h2>
+      <p className="modal-intro">Confirma el importe y tu correo antes de continuar al pago.</p>
+      <OrderSummary data={draft} />
+      {error && <p className="form-error" role="alert">{error}</p>}
+      <div className="review-actions">
+        <button className="button button-dark full-button" disabled={busy} onClick={pay}>{busy ? 'Abriendo Stripe…' : 'Continuar a pagar'} <span aria-hidden="true">↗</span></button>
+        <button className="back-button" disabled={busy} onClick={() => { setError(''); setStep('form'); }}>← Editar datos</button>
+      </div>
+      <p className="form-note">Al confirmar el pago podrás descargar tu comprobante en PDF.</p>
+    </div>}
 
-      {step === 'result' && order && (
-        <div className="payment-step">
-          <p className="step-count">03 / TU ORDEN DE EJEMPLO</p>
-          <div className="order-mark" aria-hidden="true">✓</div>
-          <h2 id="result-heading" tabIndex={-1}>El primer paso,<br />en tus manos.</h2>
-          <p className="order-state">PENDIENTE DE PAGO · DEMOSTRACIÓN</p>
-          <OrderSummary data={order} withOrder />
-          <p className="demo-explanation">Esta orden es ilustrativa: no tiene validez de cobro, no acredita un abono y no reserva un lugar.</p>
-          <button className="button button-dark full-button" onClick={download}>Descargar orden de ejemplo <span aria-hidden="true">↓</span></button>
-          <button className="back-button" onClick={() => ref.current.close()}>Volver a la experiencia</button>
-        </div>
-      )}
-    </dialog>
-  );
+    {step === 'result' && order && <div className="payment-step">
+      <p className="step-count">03 / TU COMPROBANTE</p>
+      <div className="order-mark" aria-hidden="true">✓</div>
+      <h2 id="payment-title" tabIndex={-1}>{order.livemode ? 'Tu abono está confirmado.' : 'Pago de prueba confirmado.'}</h2>
+      <p className="order-state">{order.livemode ? 'PAGO CONFIRMADO POR STRIPE' : 'PRUEBA · SIN CARGO REAL'}</p>
+      <OrderSummary data={order} />
+      <p className="demo-explanation">{order.livemode ? 'Conserva el comprobante de este abono. No es una factura fiscal ni acredita la liquidación total del viaje.' : 'Esta operación es de prueba. El PDF no acredita un abono real ni reserva un lugar.'}</p>
+      {error && <p className="form-error" role="alert">{error}</p>}
+      <button className="button button-dark full-button" disabled={busy} onClick={download}>{busy ? 'Preparando PDF…' : 'Descargar comprobante PDF'} <span aria-hidden="true">↓</span></button>
+      <button className="back-button" disabled={busy} onClick={close}>Volver a la experiencia</button>
+    </div>}
+
+    {['checking', 'pending', 'expired', 'adjusted', 'verification-error'].includes(step) && <div className="payment-step" aria-live="polite">
+      <p className="step-count">03 / ESTADO DEL PAGO</p>
+      <h2 id="payment-title" tabIndex={-1}>{step === 'checking' ? 'Verificando tu abono…' : step === 'pending' ? 'Tu pago sigue pendiente.' : step === 'expired' ? 'La sesión expiró.' : step === 'adjusted' ? 'Este pago tiene cambios.' : 'No pudimos verificar el pago.'}</h2>
+      <p className="modal-intro">{step === 'checking' ? 'Estamos consultando la confirmación de Stripe.' : step === 'pending' ? 'Aún no hay un abono confirmado. Si completaste el pago, espera un momento y verifica nuevamente antes de intentar otro cargo.' : step === 'expired' ? 'Esta sesión de Stripe ya no está disponible. Si tienes un cargo en tu banco, consulta al equipo antes de volver a pagar.' : step === 'adjusted' ? 'El pago tiene una devolución o disputa. Contacta al equipo para revisar el estado actualizado.' : error}</p>
+      {['pending', 'verification-error'].includes(step) && <button className="button button-dark full-button" onClick={retry}>Verificar nuevamente <span aria-hidden="true">↻</span></button>}
+      <button className="back-button" onClick={close}>Volver a la experiencia</button>
+    </div>}
+  </dialog>;
 }

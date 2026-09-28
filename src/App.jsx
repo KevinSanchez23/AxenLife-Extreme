@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import Cursor from './components/Cursor';
 import Header from './components/Header';
 import MenuOverlay from './components/MenuOverlay';
@@ -13,6 +13,7 @@ import PaymentDialog from './components/PaymentDialog';
 import WhatsappDialog from './components/WhatsappDialog';
 import { useSite } from './hooks/useSite';
 import { lockScroll } from './lib/scroll';
+import { clearPaymentReturn, readPaymentReturn } from './lib/payments';
 
 const WHATSAPP_NUMBER = ''; // dígitos internacionales sin '+' cuando se confirme
 
@@ -20,7 +21,8 @@ export default function App() {
   const reduced = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const [paused, setPaused] = useState(reduced);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [paymentReturn, setPaymentReturn] = useState(readPaymentReturn);
+  const [paymentOpen, setPaymentOpen] = useState(() => Boolean(readPaymentReturn()));
   const [whatsappOpen, setWhatsappOpen] = useState(false);
 
   useSite(paused, reduced);
@@ -32,6 +34,9 @@ export default function App() {
   }, [menuOpen]);
 
   const openPayment = () => { setMenuOpen(false); setPaymentOpen(true); };
+  const closePayment = useCallback(() => {
+    setPaymentOpen(false); setPaymentReturn(null); clearPaymentReturn();
+  }, []);
   const openWhatsapp = () => {
     if (/^[1-9]\d{9,14}$/.test(WHATSAPP_NUMBER)) {
       const msg = encodeURIComponent('Hola, me gustaría obtener más información sobre Axen Life Extreme en Whistler, Canadá.');
@@ -39,19 +44,19 @@ export default function App() {
     } else setWhatsappOpen(true);
   };
 
-  // WebMCP opcional: abre el formulario visible de abono, nunca un cobro real
+  // WebMCP opcional: solo abre el formulario; pagar requiere la acción del usuario.
   useEffect(() => {
     if (!document.modelContext?.registerTool) return;
     const ctrl = new AbortController();
     try {
       Promise.resolve(document.modelContext.registerTool({
-        name: 'start_abono_demo', title: 'Abrir demostración de abono',
+        name: 'start_abono', title: 'Abrir formulario de abono',
         description: 'Abre el formulario visible de abono de Axen Life Extreme. No crea una orden ni cobra dinero.',
         inputSchema: { type: 'object', properties: {}, additionalProperties: false },
         annotations: { readOnlyHint: false, untrustedContentHint: false },
         execute(input) {
           if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length) throw new Error('Este formulario se abre sin parámetros.');
-          setPaymentOpen(true); return { opened: true, mode: 'demonstration', chargesMoney: false };
+          setPaymentOpen(true); return { opened: true, chargesMoney: false };
         },
       }, { signal: ctrl.signal })).catch(() => {});
     } catch { /* funciona sin esta API opcional */ }
@@ -79,7 +84,7 @@ export default function App() {
 
       <Footer />
 
-      <PaymentDialog open={paymentOpen} onClose={() => setPaymentOpen(false)} />
+      <PaymentDialog open={paymentOpen} onClose={closePayment} paymentReturn={paymentReturn} />
       <WhatsappDialog open={whatsappOpen} onClose={() => setWhatsappOpen(false)} />
     </>
   );

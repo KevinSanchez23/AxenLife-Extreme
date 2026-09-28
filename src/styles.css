@@ -378,6 +378,9 @@ body:has(dialog[open]){overflow:hidden}
 .order-row.amount dd{font-family:var(--display);font-weight:700;font-size:32px;color:var(--red)}
 .order-row.amount small{font-family:var(--body);font-size:10px}
 .review-actions{margin-top:6px}
+.modal button:disabled{opacity:.6;cursor:wait;pointer-events:none}
+.payment-notice{font-size:13px;line-height:1.6;padding:14px;border:1px solid var(--line);border-radius:8px;background:var(--ice-1);margin:0 0 20px}
+.order-row dd{overflow-wrap:anywhere;min-width:0}
 .back-button{display:block;width:100%;padding:17px 10px 0;font-size:13px;font-weight:600;color:var(--muted)}
 .back-button:hover{color:var(--red)}
 .order-mark{width:48px;height:48px;border:1.5px solid var(--red);color:var(--red);border-radius:50%;display:grid;place-items:center;font-size:24px;margin:20px 0}
