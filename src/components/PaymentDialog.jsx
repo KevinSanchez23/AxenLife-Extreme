@@ -149,7 +149,7 @@ export default function PaymentDialog({ open, onClose, paymentReturn }) {
 
   const close = () => { if (!inFlight.current) ref.current.close(); };
   const retry = () => setCheckVersion(v => v + 1);
-  return <dialog id="payment-dialog" className="modal" ref={ref} onClick={e => { if (e.target === ref.current) close(); }} aria-labelledby="payment-title" aria-busy={busy || step === 'checking'}>
+  return <dialog id="payment-dialog" className="modal" data-lenis-prevent ref={ref} onClick={e => { if (e.target === ref.current) close(); }} aria-labelledby="payment-title" aria-busy={busy || step === 'checking'}>
     <button type="button" className="modal-close" onClick={close} disabled={busy} aria-label="Cerrar formulario">×</button>
     <div className="modal-brand">AXEN LIFE <span>EXTREME</span></div>
 
@@ -190,10 +190,10 @@ export default function PaymentDialog({ open, onClose, paymentReturn }) {
     {step === 'result' && order && <div className="payment-step">
       <p className="step-count">03 / TU COMPROBANTE</p>
       <div className="order-mark" aria-hidden="true">✓</div>
-      <h2 id="payment-title" tabIndex={-1}>{order.livemode ? 'Tu abono está confirmado.' : 'Pago de prueba confirmado.'}</h2>
-      <p className="order-state">{order.livemode ? 'PAGO CONFIRMADO POR STRIPE' : 'PRUEBA · SIN CARGO REAL'}</p>
+      <h2 id="payment-title" tabIndex={-1}>Tu abono está confirmado.</h2>
+      <p className="order-state">PAGO CONFIRMADO POR STRIPE</p>
       <OrderSummary data={order} />
-      <p className="demo-explanation">{order.livemode ? 'Conserva el comprobante de este abono. No es una factura fiscal ni acredita la liquidación total del viaje.' : 'Esta operación es de prueba. El PDF no acredita un abono real ni reserva un lugar.'}</p>
+      <p className="demo-explanation">Conserva el comprobante de este abono. No es una factura fiscal ni acredita la liquidación total del viaje.</p>
       {error && <p className="form-error" role="alert">{error}</p>}
       <button className="button button-dark full-button" disabled={busy} onClick={download}>{busy ? 'Preparando PDF…' : 'Descargar comprobante PDF'} <span aria-hidden="true">↓</span></button>
       <button className="back-button" disabled={busy} onClick={close}>Volver a la experiencia</button>

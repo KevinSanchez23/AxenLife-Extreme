@@ -24,7 +24,7 @@ export default function WhatsappDialog({ open, onClose }) {
   const backdrop = (e) => { if (e.target === ref.current) ref.current.close(); };
 
   return (
-    <dialog id="whatsapp-dialog" className="modal whatsapp-modal" ref={ref} onClick={backdrop} aria-labelledby="whatsapp-title">
+    <dialog id="whatsapp-dialog" className="modal whatsapp-modal" data-lenis-prevent ref={ref} onClick={backdrop} aria-labelledby="whatsapp-title">
       <button type="button" className="modal-close" onClick={() => ref.current.close()} aria-label="Cerrar información">×</button>
       <div className="modal-brand">AXEN LIFE <span>EXTREME</span></div>
       <p className="step-count">ESTAMOS CERCA</p>

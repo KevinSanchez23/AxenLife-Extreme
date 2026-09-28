@@ -340,6 +340,7 @@ h2 em{font-style:normal;color:var(--red)}
    Modales
    ===================================================================== */
 body:has(dialog[open]){overflow:hidden}
+html:has(dialog[open]){overflow:hidden}
 .modal{width:min(590px,calc(100% - 30px));max-height:calc(100svh - 40px);margin:auto;border:1px solid #fff;background:var(--snow);color:var(--ink);border-radius:14px;padding:38px 42px;box-shadow:0 40px 120px #14141f38;overflow-y:auto;overscroll-behavior:contain}
 .modal::backdrop{background:#14202865;backdrop-filter:blur(12px)}
 .modal[open]{animation:modal-in .4s var(--ease-out)}

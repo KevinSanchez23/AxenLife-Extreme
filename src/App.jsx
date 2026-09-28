@@ -27,11 +27,11 @@ export default function App() {
 
   useSite(paused, reduced);
 
-  // menú: clase en body + bloqueo de scroll
+  // Un solo bloqueo compartido evita reactivar el fondo al pasar del menú al modal.
   useEffect(() => {
     document.body.classList.toggle('menu-open', menuOpen);
-    lockScroll(menuOpen);
-  }, [menuOpen]);
+    lockScroll(menuOpen || paymentOpen || whatsappOpen);
+  }, [menuOpen, paymentOpen, whatsappOpen]);
 
   const openPayment = () => { setMenuOpen(false); setPaymentOpen(true); };
   const closePayment = useCallback(() => {
