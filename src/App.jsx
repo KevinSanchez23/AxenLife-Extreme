@@ -18,7 +18,9 @@ import { clearPaymentReturn, readPaymentReturn } from './lib/payments';
 const WHATSAPP_NUMBER = ''; // dígitos internacionales sin '+' cuando se confirme
 
 export default function App() {
-  const reduced = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reduced =
+    typeof window !== 'undefined' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const [paused, setPaused] = useState(reduced);
   const [menuOpen, setMenuOpen] = useState(false);
   const [paymentReturn, setPaymentReturn] = useState(readPaymentReturn);
@@ -33,14 +35,25 @@ export default function App() {
     lockScroll(menuOpen || paymentOpen || whatsappOpen);
   }, [menuOpen, paymentOpen, whatsappOpen]);
 
-  const openPayment = () => { setMenuOpen(false); setPaymentOpen(true); };
+  const openPayment = () => {
+    setMenuOpen(false);
+    setPaymentOpen(true);
+  };
   const closePayment = useCallback(() => {
-    setPaymentOpen(false); setPaymentReturn(null); clearPaymentReturn();
+    setPaymentOpen(false);
+    setPaymentReturn(null);
+    clearPaymentReturn();
   }, []);
   const openWhatsapp = () => {
     if (/^[1-9]\d{9,14}$/.test(WHATSAPP_NUMBER)) {
-      const msg = encodeURIComponent('Hola, me gustaría obtener más información sobre Axen Life Extreme en Whistler, Canadá.');
-      window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${msg}`, '_blank', 'noopener,noreferrer');
+      const msg = encodeURIComponent(
+        'Hola, me gustaría obtener más información sobre Axen Life Extreme en Whistler, Canadá.',
+      );
+      window.open(
+        `https://wa.me/${WHATSAPP_NUMBER}?text=${msg}`,
+        '_blank',
+        'noopener,noreferrer',
+      );
     } else setWhatsappOpen(true);
   };
 
@@ -49,33 +62,64 @@ export default function App() {
     if (!document.modelContext?.registerTool) return;
     const ctrl = new AbortController();
     try {
-      Promise.resolve(document.modelContext.registerTool({
-        name: 'start_abono', title: 'Abrir formulario de abono',
-        description: 'Abre el formulario visible de abono de Axen Life Extreme. No crea una orden ni cobra dinero.',
-        inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-        annotations: { readOnlyHint: false, untrustedContentHint: false },
-        execute(input) {
-          if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length) throw new Error('Este formulario se abre sin parámetros.');
-          setPaymentOpen(true); return { opened: true, chargesMoney: false };
-        },
-      }, { signal: ctrl.signal })).catch(() => {});
-    } catch { /* funciona sin esta API opcional */ }
+      Promise.resolve(
+        document.modelContext.registerTool(
+          {
+            name: 'start_abono',
+            title: 'Abrir formulario de abono',
+            description:
+              'Abre el formulario visible de abono de Axen Life Extreme. No crea una orden ni cobra dinero.',
+            inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+            annotations: { readOnlyHint: false, untrustedContentHint: false },
+            execute(input) {
+              if (
+                !input ||
+                typeof input !== 'object' ||
+                Array.isArray(input) ||
+                Object.keys(input).length
+              )
+                throw new Error('Este formulario se abre sin parámetros.');
+              setPaymentOpen(true);
+              return { opened: true, chargesMoney: false };
+            },
+          },
+          { signal: ctrl.signal },
+        ),
+      ).catch(() => {});
+    } catch {
+      /* funciona sin esta API opcional */
+    }
     return () => ctrl.abort();
   }, []);
 
   return (
     <>
-      <a className="skip-link" href="#ponentes">Saltar al contenido</a>
+      <a className="skip-link" href="#ponentes">
+        Saltar al contenido
+      </a>
       <Cursor />
       <canvas id="snow-canvas" aria-hidden="true" />
       <div className="grain" aria-hidden="true" />
 
-      <Header onPay={openPayment} menuOpen={menuOpen} onToggleMenu={() => setMenuOpen((v) => !v)} />
-      <MenuOverlay open={menuOpen} onClose={() => setMenuOpen(false)} onPay={openPayment} />
+      <Header
+        onPay={openPayment}
+        menuOpen={menuOpen}
+        onToggleMenu={() => setMenuOpen((v) => !v)}
+      />
+      <MenuOverlay
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        onPay={openPayment}
+      />
       <Ascent />
 
       <main>
-        <Hero onPay={openPayment} onWhatsapp={openWhatsapp} paused={paused} onTogglePaused={() => setPaused((v) => !v)} />
+        <Hero
+          onPay={openPayment}
+          onWhatsapp={openWhatsapp}
+          paused={paused}
+          onTogglePaused={() => setPaused((v) => !v)}
+        />
         <Marquee />
         <Speakers />
         <Experience />
@@ -84,7 +128,11 @@ export default function App() {
 
       <Footer />
 
-      <PaymentDialog open={paymentOpen} onClose={closePayment} paymentReturn={paymentReturn} />
+      <PaymentDialog
+        open={paymentOpen}
+        onClose={closePayment}
+        paymentReturn={paymentReturn}
+      />
       <WhatsappDialog open={whatsappOpen} onClose={() => setWhatsappOpen(false)} />
     </>
   );

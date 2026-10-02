@@ -8,6 +8,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "format": "prettier --write server google-apps-script src/App.jsx src/components/PaymentDialog.jsx src/components/WhatsappDialog.jsx src/lib/payments.js src/styles.css index.html vite.config.js README.md package.json .prettierrc.json",
+    "format:check": "prettier --check server google-apps-script src/App.jsx src/components/PaymentDialog.jsx src/components/WhatsappDialog.jsx src/lib/payments.js src/styles.css index.html vite.config.js README.md package.json .prettierrc.json",
     "backend:dev": "tsx watch --env-file=.env server/index.ts",
     "backend:build": "tsc -p server/tsconfig.json",
     "backend:start": "node --env-file=.env dist-server/index.js",
@@ -28,6 +30,7 @@
     "@types/node": "^26.6.3",
     "@types/pdfkit": "^0.17.6",
     "@vitejs/plugin-react": "^4.3.1",
+    "prettier": "^3.9.9",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^5.4.10"

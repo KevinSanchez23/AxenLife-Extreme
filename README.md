@@ -11,9 +11,11 @@ El comprobante se descarga en PDF desde el backend. Configurar las cuentas y pro
 en modo de prueba antes de habilitar cobros reales.
 
 ## Requisitos
+
 - Node.js 18+ (recomendado 20/22)
 
 ## Puesta en marcha
+
 ```bash
 npm install      # instala dependencias
 npm run dev      # desarrollo con hot-reload (http://localhost:5173)
@@ -25,6 +27,7 @@ Para publicar, sube el contenido de `dist/` a cualquier hosting estático
 (Vercel, Netlify, un bucket, etc.).
 
 ## Estructura
+
 ```
 index.html                 Punto de entrada de Vite (fuentes + <div id="root">)
 vite.config.js             base:'./' → rutas relativas (funciona en subcarpetas)
@@ -43,6 +46,7 @@ src/
 ```
 
 ## Cómo actualizar el contenido
+
 - **Ponentes / navegación / marquee** → `src/data/site.js` (arreglos data-driven).
   Agregar o quitar un ponente = editar el arreglo `speakers`.
 - **WhatsApp real** → en `src/App.jsx`, define `WHATSAPP_NUMBER` con los dígitos
@@ -51,6 +55,7 @@ src/
 - **Estilos** → `src/styles.css` (tokens de color en `:root`, acento glaciar `--frost`).
 
 ## Notas
+
 - Respeta `prefers-reduced-motion` y el botón "Pausar animaciones".
 - Los pagos requieren el backend, Stripe y el Apps Script de Google Sheets configurados.
 - Fuentes desde Google Fonts (única dependencia externa en runtime).
