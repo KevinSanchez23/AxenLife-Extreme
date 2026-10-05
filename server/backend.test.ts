@@ -21,7 +21,7 @@ const input = {
   name: 'Ana Pérez',
   email: ' ANA@example.com ',
   phone: '+52 5555555555',
-  amount: '1500.01',
+  amount: '10.01',
   accessToken: 'a'.repeat(64),
 };
 const session = {
@@ -29,7 +29,7 @@ const session = {
   mode: 'payment',
   payment_status: 'paid',
   currency: 'mxn',
-  amount_total: 150001,
+  amount_total: 1001,
   payment_intent: 'pi_example',
   livemode: false,
   metadata: {
@@ -42,11 +42,11 @@ const session = {
 const record = paymentRecord(session, 'evt_example', 1700000000)!;
 
 test('importe en centavos exactos, mínimo y validación del formulario', () => {
-  assert.equal(parsePayment(input, 99999999).cents, 150001);
-  assert.equal(parsePayment({ ...input, amount: '1500' }, 99999999).cents, 150000);
+  assert.equal(parsePayment(input, 99999999).cents, 1001);
+  assert.equal(parsePayment({ ...input, amount: '10' }, 99999999).cents, 1000);
   assert.equal(parsePayment(input, 99999999).email, 'ana@example.com');
   for (const amount of [
-    '1499.99',
+    '9.99',
     '-1500',
     '1e4',
     '1500.001',
@@ -58,7 +58,7 @@ test('importe en centavos exactos, mínimo y validación del formulario', () => 
     assert.throws(() => parsePayment({ ...input, amount }, 99999999));
   }
   assert.throws(() => parsePayment({ ...input, email: 'invalid' }, 99999999));
-  assert.throws(() => parsePayment(input, 150000));
+  assert.throws(() => parsePayment(input, 1000));
 });
 
 test('solo pagos confirmados de esta landing; correo original preservado', () => {
@@ -129,7 +129,7 @@ test('API: Checkout, idempotencia, firma real Stripe, errores y reintentos', asy
       params: Stripe.Checkout.SessionCreateParams;
       options: { idempotencyKey: string };
     };
-    assert.equal(creation.params.line_items![0].price_data!.unit_amount, 150001);
+    assert.equal(creation.params.line_items![0].price_data!.unit_amount, 1001);
     assert.equal(creation.params.line_items![0].price_data!.currency, 'mxn');
     assert.equal(creation.options.idempotencyKey, `abono:${key}`);
     assert.equal(
@@ -137,7 +137,7 @@ test('API: Checkout, idempotencia, firma real Stripe, errores y reintentos', asy
       tokenHash(input.accessToken),
     );
     assert.ok(creation.params.success_url?.includes('session_id={CHECKOUT_SESSION_ID}'));
-    assert.equal((await post({ ...input, amount: '1499' })).status, 400);
+    assert.equal((await post({ ...input, amount: '9.99' })).status, 400);
     assert.equal((await post(input, { Origin: 'https://evil.example' })).status, 403);
     assert.equal((await post(input, { 'Idempotency-Key': 'invalid' })).status, 400);
     assert.equal(creations.length, 1);
@@ -218,7 +218,7 @@ test('retorno y PDF: acceso privado, Stripe confirmado, pendiente, devolución y
     const result = await response.json();
     assert.equal(result.status, 'paid');
     assert.equal(result.receipt.email, 'ana@example.com');
-    assert.equal(result.receipt.cents, 150001);
+    assert.equal(result.receipt.cents, 1001);
     const pdf = await request('/api/comprobante');
     assert.equal(pdf.status, 200);
     assert.equal(pdf.headers.get('content-type'), 'application/pdf');
@@ -353,7 +353,7 @@ test('Apps Script: HMAC, bloqueo, deduplicación por pago y neutralización de f
   assert.equal(invoke({ ...record, name: '=IMPORTXML("evil")' }).ok, true);
   assert.equal(rows.length, 2);
   assert.equal(rows[1][4], '\'=IMPORTXML("evil")');
-  assert.equal(rows[1][7], 1500.01);
+  assert.equal(rows[1][7], 10.01);
   assert.equal(invoke({ ...record, eventId: 'evt_second' }).duplicate, true);
   assert.equal(rows.length, 2);
   assert.equal(lockCount, 2);

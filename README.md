@@ -6,7 +6,7 @@ flujo de abono conectado a Stripe mediante el backend.
 
 El backend de Stripe y Google Sheets está en `server/`. Configuración, contrato de API,
 pruebas y despliegue en Azure: [server/README.md](server/README.md).
-El formulario valida el mínimo de $1,500 MXN, abre Stripe y verifica el pago al volver.
+El formulario valida el mínimo de $10 MXN, abre Stripe y verifica el pago al volver.
 El comprobante se descarga en PDF desde el backend. Configurar las cuentas y probar
 en modo de prueba antes de habilitar cobros reales.
 

@@ -295,7 +295,7 @@ export default function PaymentDialog({ open, onClose, paymentReturn }) {
             empieza aquí.
           </h2>
           <p className="modal-intro">
-            Elige cuánto deseas abonar. El mínimo es de $1,500.00 MXN.
+            Elige cuánto deseas abonar. El mínimo es de $10.00 MXN.
           </p>
           {paymentReturn?.type === 'cancelled' && (
             <p className="payment-notice" role="status">
@@ -365,17 +365,17 @@ export default function PaymentDialog({ open, onClose, paymentReturn }) {
                   name="amount"
                   type="number"
                   inputMode="decimal"
-                  min="1500"
+                  min="10"
                   max="999999.99"
                   step="0.01"
-                  placeholder="1500.00"
+                  placeholder="10.00"
                   defaultValue={draft ? (draft.cents / 100).toFixed(2) : ''}
                   required
                   aria-describedby="amount-help"
                 />
                 <span>MXN</span>
               </div>
-              <p id="amount-help">Importe en pesos mexicanos. Abono mínimo: $1,500.00.</p>
+              <p id="amount-help">Importe en pesos mexicanos. Abono mínimo: $10.00.</p>
             </div>
             {error && (
               <p className="form-error" role="alert">

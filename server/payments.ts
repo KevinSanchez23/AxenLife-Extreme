@@ -1,7 +1,7 @@
 import type Stripe from 'stripe';
 
 export const PAYMENT_SOURCE = 'axen-life-extreme';
-export const MIN_AMOUNT_CENTS = 150000;
+export const MIN_AMOUNT_CENTS = 1000;
 
 export class InputError extends Error {}
 
@@ -31,8 +31,7 @@ export function parsePayment(body: unknown, maxAmountCents: number) {
     throw new InputError('Escribe el importe en pesos, con hasta dos decimales.');
   const [pesos, decimals = ''] = amount.split('.');
   const cents = Number(pesos) * 100 + Number(decimals.padEnd(2, '0'));
-  if (cents < MIN_AMOUNT_CENTS)
-    throw new InputError('El abono mínimo es de $1,500.00 MXN.');
+  if (cents < MIN_AMOUNT_CENTS) throw new InputError('El abono mínimo es de $10.00 MXN.');
   if (cents > maxAmountCents)
     throw new InputError('El importe supera el máximo permitido.');
   return { name, email, phone, cents };

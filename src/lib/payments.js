@@ -6,7 +6,7 @@ export function parseAmount(value) {
     throw new Error('Escribe un importe válido, con hasta dos decimales.');
   const [pesos, decimals = ''] = raw.split('.');
   const cents = Number(pesos) * 100 + Number(decimals.padEnd(2, '0'));
-  if (cents < 150000) throw new Error('El abono mínimo es de $1,500.00 MXN.');
+  if (cents < 1000) throw new Error('El abono mínimo es de $10.00 MXN.');
   return cents;
 }
 
