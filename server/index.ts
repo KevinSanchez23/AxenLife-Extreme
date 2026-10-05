@@ -12,9 +12,9 @@ const app = createApp(config, {
   stripe,
   writePayment: createSheetsWriter(config.sheetsUrl, config.sheetsSecret),
 });
-// Solo loopback: publicar a través del proxy HTTPS del servidor de Azure.
-const server = app.listen(config.port, '127.0.0.1', () =>
-  console.log(`API escuchando en 127.0.0.1:${config.port}`),
+// Docker usa HOST=0.0.0.0; Compose publica el puerto solo en loopback del host.
+const server = app.listen(config.port, config.host, () =>
+  console.log(`API escuchando en ${config.host}:${config.port}`),
 );
 server.requestTimeout = 30000;
 server.headersTimeout = 10000;

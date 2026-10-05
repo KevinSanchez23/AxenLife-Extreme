@@ -1,5 +1,7 @@
 # Backend de abonos: Azure + Stripe + Google Sheets
 
+Para servidores con Docker y Apache: [guía de Docker](DOCKER.md).
+
 Node.js 22 o superior, TypeScript y Express. Sin base de datos propia.
 La landing está conectada a la API y descarga el comprobante PDF al confirmar el pago.
 No activar cobros públicos hasta configurar las cuentas y probar el recorrido completo.

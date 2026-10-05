@@ -1,4 +1,5 @@
 export interface Config {
+  host: string;
   port: number;
   origin: string;
   successUrl: string;
@@ -73,6 +74,7 @@ export function loadConfig(env = process.env): Config {
     );
   }
   return {
+    host: env.HOST?.trim() || '127.0.0.1',
     port: integer('PORT', 3001, 1, 65535),
     origin: origin.origin,
     successUrl: `${success.href}&session_id={CHECKOUT_SESSION_ID}`,
