@@ -53,13 +53,13 @@ La hoja y Stripe almacenan datos personales; el backend no los persiste ni los r
   "name": "Ana Pérez",
   "email": "ana@example.com",
   "phone": "+52 5555555555",
-  "amount": "10.00",
+  "amount": "1500.00",
   "accessToken": "<64 caracteres hexadecimales aleatorios>"
 }
 ```
 
 `phone` es opcional; `amount` es **texto en pesos**, sin comas, hasta dos decimales.
-El mínimo es 1000 centavos. `MAX_AMOUNT_CENTS` fija el máximo (por defecto
+El mínimo es 150000 centavos. `MAX_AMOUNT_CENTS` fija el máximo (por defecto
 99999999 centavos, $999,999.99 MXN); ajustar al límite de negocio antes de producción.
 Moneda y URLs las controla el servidor. Inicialmente solo se ofrecen tarjetas.
 Respuesta: `{ "url": "https://checkout.stripe.com/..." }`; redirigir a esa URL.
@@ -113,7 +113,7 @@ Crear una sesión **a través de esta API** para incluir metadata; los eventos g
 
 Completar Checkout con una tarjeta de prueba de Stripe, confirmar una fila en
 `Abonos_pruebas` y reenviar el evento desde Stripe: debe permanecer una fila.
-Probar importe inferior a $10, cancelación, pago rechazado y caída del escritor.
+Probar importe inferior a $1,500, cancelación, pago rechazado y caída del escritor.
 Ante error de Sheets se devuelve 503 para que Stripe reintente. No se responde 200
 antes de confirmar la escritura. Una notificación válida pero ajena a esta landing se ignora.
 El webhook verifica el cuerpo original y firma, y exige estado `paid` y moneda MXN.

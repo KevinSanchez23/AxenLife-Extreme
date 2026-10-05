@@ -81,7 +81,7 @@ export function loadConfig(env = process.env): Config {
     stripeWebhookSecret,
     sheetsUrl: sheets.href,
     sheetsSecret,
-    maxAmountCents: integer('MAX_AMOUNT_CENTS', 99999999, 1000, 99999999),
+    maxAmountCents: integer('MAX_AMOUNT_CENTS', 99999999, 150000, 99999999),
     trustProxyHops: integer('TRUST_PROXY_HOPS', 0, 0, 5),
   };
 }

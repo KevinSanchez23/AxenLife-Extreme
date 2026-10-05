@@ -58,7 +58,7 @@ function doPost(e) {
       typeof p.confirmedAt !== 'string' ||
       !isFinite(Date.parse(p.confirmedAt)) ||
       !Number.isSafeInteger(p.amountCents) ||
-      p.amountCents < 1000 ||
+      p.amountCents < 150000 ||
       p.amountCents > 99999999 ||
       p.currency !== 'mxn' ||
       p.status !== 'paid' ||
