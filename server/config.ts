@@ -62,11 +62,16 @@ export function loadConfig(env = process.env): Config {
     );
   const stripeSecretKey = required('STRIPE_SECRET_KEY');
   const stripeWebhookSecret = required('STRIPE_WEBHOOK_SECRET');
-  if (
-    !/^sk_(test|live)_/.test(stripeSecretKey) ||
-    !stripeWebhookSecret.startsWith('whsec_')
-  )
-    throw new Error('Claves de Stripe inválidas');
+  if (!/^(sk|rk)_(test|live)_\S+$/.test(stripeSecretKey)) {
+    throw new Error(
+      'STRIPE_SECRET_KEY inválida: usa una clave secreta sk_test_/sk_live_ o restringida rk_test_/rk_live_. No uses la clave pública pk_.',
+    );
+  }
+  if (!/^whsec_\S+$/.test(stripeWebhookSecret)) {
+    throw new Error(
+      'STRIPE_WEBHOOK_SECRET inválido: debe ser el secreto whsec_ del webhook o de stripe listen.',
+    );
+  }
   return {
     port: integer('PORT', 3001, 1, 65535),
     origin: origin.origin,

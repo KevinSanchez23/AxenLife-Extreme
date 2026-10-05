@@ -80,6 +80,34 @@ test('configuración rechaza URLs inseguras y secretos ausentes', () => {
   );
 });
 
+test('configuración acepta claves restringidas y distingue errores sin revelar secretos', () => {
+  const env = {
+    PUBLIC_SITE_URL: 'http://localhost:5173/',
+    STRIPE_SECRET_KEY: 'sk_test_example',
+    STRIPE_WEBHOOK_SECRET: 'whsec_example',
+    GOOGLE_SHEETS_WEB_APP_URL: 'https://script.google.com/macros/s/example/exec',
+    GOOGLE_SHEETS_SHARED_SECRET: 'a'.repeat(64),
+  };
+  for (const prefix of ['sk_test_', 'sk_live_', 'rk_test_', 'rk_live_']) {
+    const key = `${prefix}example`;
+    assert.equal(loadConfig({ ...env, STRIPE_SECRET_KEY: key }).stripeSecretKey, key);
+  }
+  for (const key of ['pk_live_privatevalue', 'rk_live_', 'rk_live_invalid value']) {
+    assert.throws(
+      () => loadConfig({ ...env, STRIPE_SECRET_KEY: key }),
+      (error: Error) => {
+        assert.match(error.message, /STRIPE_SECRET_KEY/);
+        if (key !== 'rk_live_') assert.ok(!error.message.includes(key));
+        return true;
+      },
+    );
+  }
+  assert.throws(
+    () => loadConfig({ ...env, STRIPE_WEBHOOK_SECRET: 'invalid_privatevalue' }),
+    /STRIPE_WEBHOOK_SECRET inválido/,
+  );
+});
+
 test('API: Checkout, idempotencia, firma real Stripe, errores y reintentos', async () => {
   const stripe = new Stripe(config.stripeSecretKey);
   const creations: unknown[] = [];
