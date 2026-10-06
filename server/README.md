@@ -166,3 +166,23 @@ La comprobación de Origin no es autenticación; el endpoint de creación es pú
 rechazo de webhooks falsos, fallo/reintento de Sheets, HMAC, deduplicación y escape de fórmulas
 del Apps Script en un entorno simulado. `npm run backend:build` verifica TypeScript.
 Estas pruebas no sustituyen la prueba en las cuentas reales de Stripe y Google.
+
+# IVA fijo del 16 %
+
+El importe del formulario es el abono antes de impuestos: $1,500.00 + $240.00 de IVA =
+$1,740.00 MXN. Se redondea el impuesto a centavos. El máximo configurado limita el
+total con IVA. Checkout usa una tasa manual exclusiva del 16 %, sin Stripe Tax automático.
+El backend busca o crea la tasa en la cuenta de la clave configurada; si se usa una clave
+restringida, necesita lectura y escritura de Tax Rates además de sus permisos actuales.
+
+Antes de desplegar, actualizar `google-apps-script/Code.gs` y publicar una **nueva versión**
+de la implementación existente (conservar la URL `/exec`). Después reconstruir el backend
+Docker y publicar el frontend. No se necesitan variables de entorno adicionales.
+Sheets conserva sus primeras 11 columnas: **Abono MXN (H) contiene el total cobrado**.
+Agrega automáticamente L (Abono antes de impuestos MXN) y M (IVA MXN); las filas anteriores
+no se modifican. La actualización es compatible con el backend anterior.
+
+Los pagos anteriores se consultan con su desglose original. Los enlaces Checkout ya
+creados conservan sus importes: para probar el IVA, iniciar un pago nuevo desde la landing.
+Verificar $1,500 → $240 IVA → $1,740 total en Checkout, comprobante y Sheets antes de
+aceptar pagos. Las pruebas automatizadas no hacen cargos ni contactan la cuenta Stripe.

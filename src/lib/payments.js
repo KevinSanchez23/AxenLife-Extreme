@@ -7,6 +7,8 @@ export function parseAmount(value) {
   const [pesos, decimals = ''] = raw.split('.');
   const cents = Number(pesos) * 100 + Number(decimals.padEnd(2, '0'));
   if (cents < 150000) throw new Error('El abono mínimo es de $1,500.00 MXN.');
+  if (cents + Math.round((cents * 16) / 100) > 99999999)
+    throw new Error('El importe con IVA supera el máximo permitido.');
   return cents;
 }
 

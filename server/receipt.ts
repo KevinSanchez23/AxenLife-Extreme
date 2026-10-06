@@ -16,6 +16,8 @@ export interface Receipt {
   email: string;
   phone: string;
   cents: number;
+  subtotalCents: number;
+  taxCents: number;
   paidAt: string;
   livemode: boolean;
 }
@@ -64,6 +66,8 @@ export async function lookupPayment(
       email: record.email,
       phone: record.phone,
       cents: record.amountCents,
+      subtotalCents: record.subtotalCents,
+      taxCents: record.taxCents,
       paidAt: record.confirmedAt,
       livemode: record.livemode,
     },

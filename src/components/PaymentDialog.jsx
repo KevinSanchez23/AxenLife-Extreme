@@ -30,12 +30,16 @@ function OrderSummary({ data }) {
         timeZone: 'America/Mexico_City',
       }).format(new Date(data.paidAt)) + ' (CDMX)',
     ]);
-  rows.push(['Abono', `${money(data.cents)} MXN`]);
+  const subtotal = data.reference ? data.subtotalCents : data.cents;
+  const tax = data.reference ? data.taxCents : Math.round((subtotal * 16) / 100);
+  rows.push(['Abono antes de impuestos', `${money(subtotal)} MXN`]);
+  rows.push(['IVA (16 %)', `${money(tax)} MXN`]);
+  rows.push(['Total', `${money(subtotal + tax)} MXN`]);
   return (
     <div className="order-summary">
       <dl style={{ margin: 0 }}>
         {rows.map(([label, value]) => (
-          <div className={`order-row${label === 'Abono' ? ' amount' : ''}`} key={label}>
+          <div className={`order-row${label === 'Total' ? ' amount' : ''}`} key={label}>
             <dt>{label}</dt>
             <dd>{value}</dd>
           </div>
@@ -295,7 +299,8 @@ export default function PaymentDialog({ open, onClose, paymentReturn }) {
             empieza aquí.
           </h2>
           <p className="modal-intro">
-            Elige cuánto deseas abonar. El mínimo es de $1,500.00 MXN.
+            Elige cuánto deseas abonar. El mínimo es de $1,500.00 MXN más IVA del 16 %
+            ($1,740.00 MXN en total).
           </p>
           {paymentReturn?.type === 'cancelled' && (
             <p className="payment-notice" role="status">
@@ -366,7 +371,7 @@ export default function PaymentDialog({ open, onClose, paymentReturn }) {
                   type="number"
                   inputMode="decimal"
                   min="1500"
-                  max="999999.99"
+                  max="862068.96"
                   step="0.01"
                   placeholder="1500.00"
                   defaultValue={draft ? (draft.cents / 100).toFixed(2) : ''}
@@ -375,7 +380,7 @@ export default function PaymentDialog({ open, onClose, paymentReturn }) {
                 />
                 <span>MXN</span>
               </div>
-              <p id="amount-help">Importe en pesos mexicanos. Abono mínimo: $1,500.00.</p>
+              <p id="amount-help">Abono antes de impuestos. Se sumará el 16 % de IVA.</p>
             </div>
             {error && (
               <p className="form-error" role="alert">

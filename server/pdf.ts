@@ -59,11 +59,7 @@ export function createReceiptPdf(receipt: Receipt): Promise<Buffer> {
           243,
         );
       doc.roundedRect(48, 278, width, 95, 8).fill('#edf3f5');
-      doc
-        .font('Regular')
-        .fontSize(10)
-        .fillColor('#53616a')
-        .text('IMPORTE ABONADO', 66, 294);
+      doc.font('Regular').fontSize(10).fillColor('#53616a').text('TOTAL PAGADO', 66, 294);
       const amount = new Intl.NumberFormat('es-MX', {
         style: 'currency',
         currency: 'MXN',
@@ -73,7 +69,22 @@ export function createReceiptPdf(receipt: Receipt): Promise<Buffer> {
         .fontSize(30)
         .fillColor('#17232b')
         .text(`${amount} MXN`, 66, 316, { width: width - 36 });
-      let y = 402;
+      const money = (cents: number) =>
+        new Intl.NumberFormat('es-MX', {
+          style: 'currency',
+          currency: 'MXN',
+        }).format(cents / 100) + ' MXN';
+      doc
+        .font('Regular')
+        .fontSize(10)
+        .fillColor('#53616a')
+        .text(
+          `Abono: ${money(receipt.subtotalCents)}    IVA (16 %): ${money(receipt.taxCents)}`,
+          48,
+          385,
+          { width },
+        );
+      let y = 417;
       const rows = [
         ['Nombre', receipt.name],
         ['Correo', receipt.email],

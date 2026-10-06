@@ -10,6 +10,7 @@ import {
 } from './payments.js';
 import { lookupPayment, tokenHash, validateAccessToken } from './receipt.js';
 import { createReceiptPdf } from './pdf.js';
+import { createVatRateResolver } from './tax.js';
 
 interface Dependencies {
   stripe: Stripe;
@@ -18,6 +19,7 @@ interface Dependencies {
 
 export function createApp(config: Config, { stripe, writePayment }: Dependencies) {
   const app = express();
+  const vatRate = createVatRateResolver(stripe);
   app.disable('x-powered-by');
   app.set('trust proxy', config.trustProxyHops);
   app.use((_req, res, next) => {
@@ -121,6 +123,7 @@ export function createApp(config: Config, { stripe, writePayment }: Dependencies
         name: input.name,
         email: input.email,
         phone: input.phone,
+        tax_policy: 'iva16-exclusive-v1',
       };
       const session = await stripe.checkout.sessions.create(
         {
@@ -134,8 +137,10 @@ export function createApp(config: Config, { stripe, writePayment }: Dependencies
           line_items: [
             {
               quantity: 1,
+              tax_rates: [await vatRate()],
               price_data: {
                 currency: 'mxn',
+                tax_behavior: 'exclusive',
                 unit_amount: input.cents,
                 product_data: { name: 'Abono — Axen Life Extreme' },
               },

@@ -33,7 +33,7 @@ export function parsePayment(body: unknown, maxAmountCents: number) {
   const cents = Number(pesos) * 100 + Number(decimals.padEnd(2, '0'));
   if (cents < MIN_AMOUNT_CENTS)
     throw new InputError('El abono mínimo es de $1,500.00 MXN.');
-  if (cents > maxAmountCents)
+  if (cents + Math.round((cents * 16) / 100) > maxAmountCents)
     throw new InputError('El importe supera el máximo permitido.');
   return { name, email, phone, cents };
 }
@@ -47,6 +47,8 @@ export interface PaymentRecord {
   email: string;
   phone: string;
   amountCents: number;
+  subtotalCents: number;
+  taxCents: number;
   currency: 'mxn';
   status: 'paid';
   livemode: boolean;
@@ -73,6 +75,19 @@ export function paymentRecord(
   ) {
     throw new Error('Pago confirmado con datos incompletos o moneda/importe incorrectos');
   }
+  const taxCents = session.total_details?.amount_tax ?? 0;
+  const subtotalCents = session.amount_subtotal ?? session.amount_total!;
+  if (
+    !Number.isSafeInteger(taxCents) ||
+    taxCents < 0 ||
+    !Number.isSafeInteger(subtotalCents) ||
+    subtotalCents < MIN_AMOUNT_CENTS ||
+    subtotalCents + taxCents !== session.amount_total ||
+    (session.metadata.tax_policy === 'iva16-exclusive-v1' &&
+      taxCents !== Math.round((subtotalCents * 16) / 100))
+  ) {
+    throw new Error('Desglose de impuestos inconsistente');
+  }
   return {
     paymentId,
     sessionId: session.id,
@@ -82,6 +97,8 @@ export function paymentRecord(
     email: session.metadata.email,
     phone: session.metadata.phone || '',
     amountCents: session.amount_total!,
+    subtotalCents,
+    taxCents,
     currency: 'mxn',
     status: 'paid',
     livemode: session.livemode,

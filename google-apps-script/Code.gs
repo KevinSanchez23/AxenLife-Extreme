@@ -66,6 +66,17 @@ function doPost(e) {
     )
       throw new Error('record');
 
+    var subtotal = p.subtotalCents === undefined ? p.amountCents : p.subtotalCents;
+    var tax = p.taxCents === undefined ? 0 : p.taxCents;
+    if (
+      !Number.isSafeInteger(subtotal) ||
+      subtotal < 150000 ||
+      !Number.isSafeInteger(tax) ||
+      tax < 0 ||
+      subtotal + tax !== p.amountCents
+    )
+      throw new Error('tax');
+
     lock = LockService.getScriptLock();
     lock.waitLock(5000);
     var book = SpreadsheetApp.openById(spreadsheetId);
@@ -96,6 +107,21 @@ function doPost(e) {
       )
         throw new Error('headers');
     }
+    // Preserve the original columns and historical rows. Column H remains total paid.
+    var taxHeaders = ['Abono antes de impuestos MXN', 'IVA MXN'];
+    var existingTaxHeaders = sheet.getRange(1, 12, 1, 2).getValues()[0];
+    if (
+      existingTaxHeaders.every(function (value) {
+        return !value;
+      })
+    ) {
+      sheet.getRange(1, 12, 1, 2).setValues([taxHeaders]);
+    } else if (
+      taxHeaders.some(function (value, index) {
+        return existingTaxHeaders[index] !== value;
+      })
+    )
+      throw new Error('tax headers');
     var lastRow = sheet.getLastRow();
     var duplicate =
       lastRow > 1 &&
@@ -124,6 +150,8 @@ function doPost(e) {
       'MXN',
       'Pagado',
       p.livemode ? 'Real' : 'Prueba',
+      subtotal / 100,
+      tax / 100,
     ]);
     SpreadsheetApp.flush();
     return jsonResponse({ ok: true, paymentId: p.paymentId, duplicate: false });

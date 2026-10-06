@@ -9,6 +9,7 @@ import { loadConfig } from './config.js';
 import { parsePayment, paymentRecord, PAYMENT_SOURCE } from './payments.js';
 import { createSheetsWriter } from './sheets.js';
 import { tokenHash } from './receipt.js';
+import { createVatRateResolver } from './tax.js';
 
 const config = loadConfig({
   PUBLIC_SITE_URL: 'http://localhost:5173/',
@@ -73,6 +74,49 @@ test('solo pagos confirmados de esta landing; correo original preservado', () =>
   );
 });
 
+test('IVA exclusivo: redondeo, límites y compatibilidad de pagos anteriores', () => {
+  assert.equal(record.taxCents, 0);
+  assert.equal(record.subtotalCents, 150001);
+  for (const [base, tax] of [
+    [150000, 24000],
+    [150001, 24000],
+    [150004, 24001],
+  ]) {
+    const taxed = {
+      ...session,
+      amount_subtotal: base,
+      amount_total: base + tax,
+      total_details: { amount_tax: tax, amount_discount: 0, amount_shipping: 0 },
+      metadata: { ...session.metadata, tax_policy: 'iva16-exclusive-v1' },
+    };
+    assert.equal(paymentRecord(taxed, 'evt_tax', 1700000000)?.taxCents, tax);
+    assert.throws(() =>
+      paymentRecord({ ...taxed, amount_total: base }, 'evt_tax', 1700000000),
+    );
+  }
+  assert.equal(parsePayment({ ...input, amount: '862068.96' }, 99999999).cents, 86206896);
+  assert.throws(() => parsePayment({ ...input, amount: '862068.97' }, 99999999));
+});
+
+test('tasa fija se crea exclusiva, comparte concurrencia y permite reintentar errores', async () => {
+  const stripe = new Stripe(config.stripeSecretKey);
+  stripe.taxRates.list = (() => ({
+    async *[Symbol.asyncIterator]() {},
+  })) as unknown as typeof stripe.taxRates.list;
+  let calls = 0;
+  stripe.taxRates.create = (async (params: Stripe.TaxRateCreateParams) => {
+    calls++;
+    assert.equal(params.percentage, 16);
+    assert.equal(params.inclusive, false);
+    if (calls === 1) throw new Error('temporary');
+    return { id: 'txr_fixed' };
+  }) as typeof stripe.taxRates.create;
+  const resolve = createVatRateResolver(stripe);
+  await assert.rejects(resolve());
+  assert.deepEqual(await Promise.all([resolve(), resolve()]), ['txr_fixed', 'txr_fixed']);
+  assert.equal(calls, 2);
+});
+
 test('configuración rechaza URLs inseguras y secretos ausentes', () => {
   assert.throws(() => loadConfig({}));
   assert.throws(() =>
@@ -111,6 +155,17 @@ test('configuración acepta claves restringidas y distingue errores sin revelar 
 test('API: Checkout, idempotencia, firma real Stripe, errores y reintentos', async () => {
   const stripe = new Stripe(config.stripeSecretKey);
   const creations: unknown[] = [];
+  stripe.taxRates.list = (() => ({
+    async *[Symbol.asyncIterator]() {
+      yield {
+        id: 'txr_iva16',
+        percentage: 16,
+        inclusive: false,
+        display_name: 'IVA',
+        metadata: { source: 'axen-life-extreme-iva-v1' },
+      };
+    },
+  })) as unknown as typeof stripe.taxRates.list;
   stripe.checkout.sessions.create = (async (params: unknown, options: unknown) => {
     creations.push({ params, options });
     return { id: session.id, url: 'https://checkout.stripe.com/example' };
@@ -159,6 +214,8 @@ test('API: Checkout, idempotencia, firma real Stripe, errores y reintentos', asy
     };
     assert.equal(creation.params.line_items![0].price_data!.unit_amount, 150001);
     assert.equal(creation.params.line_items![0].price_data!.currency, 'mxn');
+    assert.deepEqual(creation.params.line_items![0].tax_rates, ['txr_iva16']);
+    assert.equal(creation.params.line_items![0].price_data!.tax_behavior, 'exclusive');
     assert.equal(creation.options.idempotencyKey, `abono:${key}`);
     assert.equal(
       creation.params.metadata?.receipt_token_hash,
@@ -212,6 +269,9 @@ test('retorno y PDF: acceso privado, Stripe confirmado, pendiente, devolución y
   const stripe = new Stripe(config.stripeSecretKey);
   let current = {
     ...session,
+    amount_subtotal: 150000,
+    amount_total: 174000,
+    total_details: { amount_tax: 24000, amount_discount: 0, amount_shipping: 0 },
     status: 'complete',
     metadata: { ...session.metadata, receipt_token_hash: tokenHash(input.accessToken) },
     payment_intent: {
@@ -246,7 +306,9 @@ test('retorno y PDF: acceso privado, Stripe confirmado, pendiente, devolución y
     const result = await response.json();
     assert.equal(result.status, 'paid');
     assert.equal(result.receipt.email, 'ana@example.com');
-    assert.equal(result.receipt.cents, 150001);
+    assert.equal(result.receipt.cents, 174000);
+    assert.equal(result.receipt.subtotalCents, 150000);
+    assert.equal(result.receipt.taxCents, 24000);
     const pdf = await request('/api/comprobante');
     assert.equal(pdf.status, 200);
     assert.equal(pdf.headers.get('content-type'), 'application/pdf');
@@ -310,8 +372,13 @@ test('Apps Script: HMAC, bloqueo, deduplicación por pago y neutralización de f
       rows.push(row);
     },
     setFrozenRows: () => {},
-    getRange: () => ({
-      getValues: () => [rows[0]],
+    getRange: (_row: number, column: number, _count: number, width: number) => ({
+      getValues: () => [
+        Array.from({ length: width }, (_, i) => rows[0][column - 1 + i] ?? ''),
+      ],
+      setValues: (values: unknown[][]) => {
+        rows[0].splice(column - 1, width, ...values[0]);
+      },
       createTextFinder: (id: string) => {
         const finder = {
           matchEntireCell: () => finder,
@@ -382,8 +449,25 @@ test('Apps Script: HMAC, bloqueo, deduplicación por pago y neutralización de f
   assert.equal(rows.length, 2);
   assert.equal(rows[1][4], '\'=IMPORTXML("evil")');
   assert.equal(rows[1][7], 1500.01);
+  assert.equal(rows[1][11], 1500.01);
+  assert.equal(rows[1][12], 0);
   assert.equal(invoke({ ...record, eventId: 'evt_second' }).duplicate, true);
   assert.equal(rows.length, 2);
   assert.equal(lockCount, 2);
   assert.equal(locked, false);
+  rows[0] = rows[0].slice(0, 11); // Upgrade a pre-IVA sheet without changing old rows.
+  assert.equal(
+    invoke({
+      ...record,
+      paymentId: 'pi_tax',
+      amountCents: 174000,
+      subtotalCents: 150000,
+      taxCents: 24000,
+    }).ok,
+    true,
+  );
+  assert.equal(rows[2][7], 1740);
+  assert.equal(rows[2][11], 1500);
+  assert.equal(rows[2][12], 240);
+  assert.equal(invoke({ ...record, taxCents: 10 }).ok, false);
 });
